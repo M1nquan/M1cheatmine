@@ -15,20 +15,23 @@ import net.minecraft.network.chat.Component;
 import org.lwjgl.glfw.GLFW;
 
 import java.util.HashSet;
+import java.util.IdentityHashMap;
 import java.util.List;
 import java.util.Locale;
+import java.util.Map;
 import java.util.Set;
 import java.util.stream.Collectors;
 
 public class ClickGuiScreen extends Screen {
     private final Minecraft mc = Minecraft.getInstance();
     private static int winX = -1, winY = -1;
-    private static final int BASE_W = 350, BASE_H = 230;
+    private static final int BASE_W = 360, BASE_H = 236;
     private static int winW = BASE_W, winH = BASE_H;
-    private static final int SIDEBAR_W = 94;
+    private static final int SIDEBAR_W = 96;
     private static final float HUD_SCALE = M1CheatMine.HUD_SCALE;
     private static Category selected = Category.COMBAT;
     private static final Set<Module> collapsedModules = new HashSet<>();
+    private static final Map<Module, Integer> moduleKeys = new IdentityHashMap<>();
 
     private float openAnim = 0f, tabIndicatorY = 0f;
     private boolean draggingWin = false;
@@ -39,6 +42,8 @@ public class ClickGuiScreen extends Screen {
 
     private NumberSetting draggingSlider = null;
     private float sliderX, sliderW;
+
+    private Module bindingModule = null;
 
     private double scroll = 0, targetScroll = 0, maxScroll = 0;
     private String searchQuery = "";
@@ -51,15 +56,15 @@ public class ClickGuiScreen extends Screen {
 
     @Override
     protected void init() {
-        winW = Math.min(BASE_W, Math.max(270, width - 16));
-        winH = Math.min(BASE_H, Math.max(180, height - 20));
+        winW = Math.min(BASE_W, Math.max(276, width - 16));
+        winH = Math.min(BASE_H, Math.max(184, height - 20));
         if (winX == -1 || winY == -1) {
             winX = (width - winW) / 2;
             winY = Math.max(4, (height - winH) / 2);
         }
         clampWindowPosition();
         clampAllHudPositions();
-        tabIndicatorY = winY + 42 + getVisibleCategoryIndex(selected) * 19;
+        tabIndicatorY = winY + 40 + getVisibleCategoryIndex(selected) * 18;
         lastFrameTime = System.nanoTime();
     }
 
@@ -113,6 +118,23 @@ public class ClickGuiScreen extends Screen {
                 clampHudPosition(h);
             }
         }
+    }
+
+    private String formatKeyName(int keyCode) {
+        if (keyCode <= 0 || keyCode == GLFW.GLFW_KEY_UNKNOWN) return null;
+        String name = GLFW.glfwGetKeyName(keyCode, 0);
+        if (name != null && !name.isBlank()) {
+            return name.toUpperCase(Locale.ROOT);
+        }
+        return switch (keyCode) {
+            case GLFW.GLFW_KEY_SPACE -> "SPC";
+            case GLFW.GLFW_KEY_LEFT_SHIFT, GLFW.GLFW_KEY_RIGHT_SHIFT -> "SHF";
+            case GLFW.GLFW_KEY_LEFT_CONTROL, GLFW.GLFW_KEY_RIGHT_CONTROL -> "CTL";
+            case GLFW.GLFW_KEY_LEFT_ALT, GLFW.GLFW_KEY_RIGHT_ALT -> "ALT";
+            case GLFW.GLFW_KEY_TAB -> "TAB";
+            case GLFW.GLFW_KEY_ENTER, GLFW.GLFW_KEY_KP_ENTER -> "ENT";
+            default -> "K" + keyCode;
+        };
     }
 
     private String fitText(String text, int maxWidth) {
@@ -177,7 +199,7 @@ public class ClickGuiScreen extends Screen {
 
         g.drawString(mc.font, "M1CHEAT", winX + 9, winY + 9, ColorUtils.TEXT_BRIGHT, true);
         g.drawString(mc.font, "AERO // v2.2", winX + 9, winY + 18, ColorUtils.TEXT_DIM, false);
-        RenderUtils.roundedRect(g, winX + 9, winY + 28, 20, 1.0f, 0.5f, ColorUtils.AERO_ACCENT);
+        RenderUtils.roundedRect(g, winX + 9, winY + 28, 22, 1.0f, 0.5f, ColorUtils.AERO_ACCENT);
 
         List<Category> categories = getVisibleCategories();
         int catStartY = winY + 40;
@@ -222,13 +244,16 @@ public class ClickGuiScreen extends Screen {
         int cW = winW - SIDEBAR_W - 16;
         List<Module> mods = getDisplayedModules();
 
-        int sbW = Math.min(82, Math.max(56, cW / 3)), sbH = 14;
+        int sbW = Math.min(84, Math.max(58, cW / 3)), sbH = 14;
         int sbX = cX + cW - sbW, sbY = winY + 9;
 
         String headerTitle = searchQuery.isBlank() ? selected.name.toUpperCase() : "SEARCH";
+        String subInfo = bindingModule != null
+                ? "Press key for " + bindingModule.name + " (Del to clear)"
+                : mods.size() + " mods";
         int headerMaxW = Math.max(24, sbX - cX - 6);
         g.drawString(mc.font, fitText(headerTitle, headerMaxW), cX, winY + 9, ColorUtils.TEXT_BRIGHT, true);
-        g.drawString(mc.font, fitText(mods.size() + " mods", headerMaxW), cX, winY + 18, ColorUtils.TEXT_MUTED, false);
+        g.drawString(mc.font, fitText(subInfo, headerMaxW), cX, winY + 18, bindingModule != null ? ColorUtils.AERO_ACCENT2 : ColorUtils.TEXT_MUTED, false);
 
         RenderUtils.roundedGradientV(g, sbX, sbY, sbW, sbH, 3.5f, 0xD8121C30, 0xD80B1220);
         RenderUtils.roundedOutline(g, sbX, sbY, sbW, sbH, 3.5f, 0.9f, searchFocused ? ColorUtils.AERO_ACCENT : ColorUtils.AERO_BORDER);
@@ -273,11 +298,24 @@ public class ClickGuiScreen extends Screen {
             int cardBot = ColorUtils.interpolate(ColorUtils.AERO_CARD_LO, ColorUtils.AERO_CARD_HI, Math.max(mod.hoverAnim * 0.5f, mod.toggleAnim * 0.25f));
 
             RenderUtils.roundedGradientV(g, cardX, cardY, colW, cardH, 5, cardTop, cardBot);
-            int border = ColorUtils.interpolate(ColorUtils.AERO_BORDER, ColorUtils.AERO_ACCENT, Math.max(mod.hoverAnim * 0.45f, mod.toggleAnim));
+            int border = (bindingModule == mod)
+                    ? ColorUtils.AERO_ACCENT2
+                    : ColorUtils.interpolate(ColorUtils.AERO_BORDER, ColorUtils.AERO_ACCENT, Math.max(mod.hoverAnim * 0.45f, mod.toggleAnim));
             RenderUtils.roundedOutline(g, cardX, cardY, colW, cardH, 5, 0.9f, border);
 
             int tx = cardX + colW - 21, ty = cardY + 6, tw = 15, th = 9;
-            int titleRightLimit = (settingsCount > 0) ? (cardX + colW - 31) : (tx - 4);
+            int boundKey = moduleKeys.getOrDefault(mod, GLFW.GLFW_KEY_UNKNOWN);
+            String keyLabel = (bindingModule == mod) ? "..." : formatKeyName(boundKey);
+            int keyBadgeW = 0;
+            if (keyLabel != null) {
+                keyBadgeW = mc.font.width(keyLabel) + 4;
+                int kx = tx - keyBadgeW - (settingsCount > 0 ? 11 : 4);
+                RenderUtils.roundedRect(g, kx, cardY + 5, keyBadgeW, 10, 2f, 0x455FA8FF);
+                g.drawString(mc.font, keyLabel, kx + 2, cardY + 6, ColorUtils.AERO_ACCENT2, false);
+                keyBadgeW += 3;
+            }
+
+            int titleRightLimit = (settingsCount > 0) ? (cardX + colW - 31 - keyBadgeW) : (tx - 4 - keyBadgeW);
             int titleCol = ColorUtils.interpolate(ColorUtils.TEXT_SOFT, ColorUtils.TEXT_BRIGHT, mod.toggleAnim);
             g.drawString(mc.font, fitText(mod.name, titleRightLimit - (cardX + 6)), cardX + 6, cardY + 6, titleCol, true);
 
@@ -354,6 +392,11 @@ public class ClickGuiScreen extends Screen {
         double my = event.y();
         int btn = event.button();
 
+        if (bindingModule != null) {
+            bindingModule = null;
+            return true;
+        }
+
         if (btn == 0) {
             for (Module m : ModuleManager.modules) {
                 if (m instanceof HudModule h && h.enabled) {
@@ -373,7 +416,7 @@ public class ClickGuiScreen extends Screen {
 
         int cX = winX + SIDEBAR_W + 8;
         int cW = winW - SIDEBAR_W - 16;
-        int sbW = Math.min(82, Math.max(56, cW / 3)), sbH = 14;
+        int sbW = Math.min(84, Math.max(58, cW / 3)), sbH = 14;
         int sbX = cX + cW - sbW, sbY = winY + 9;
 
         if (btn == 0) {
@@ -422,6 +465,10 @@ public class ClickGuiScreen extends Screen {
                     } else if (btn == 1 && (!mod.numberSettings.isEmpty() || !mod.booleanSettings.isEmpty())) {
                         if (collapsed) collapsedModules.remove(mod);
                         else collapsedModules.add(mod);
+                        return true;
+                    } else if (btn == 2) {
+                        bindingModule = mod;
+                        searchFocused = false;
                         return true;
                     }
                 }
@@ -522,8 +569,23 @@ public class ClickGuiScreen extends Screen {
     @Override
     public boolean keyPressed(KeyEvent event) {
         int keyCode = event.key();
-        if (searchFocused) {
+
+        if (bindingModule != null) {
             if (keyCode == GLFW.GLFW_KEY_ESCAPE) {
+                bindingModule = null;
+                return true;
+            }
+            if (keyCode == GLFW.GLFW_KEY_DELETE || keyCode == GLFW.GLFW_KEY_BACKSPACE) {
+                moduleKeys.remove(bindingModule);
+            } else {
+                moduleKeys.put(bindingModule, keyCode);
+            }
+            bindingModule = null;
+            return true;
+        }
+
+        if (searchFocused) {
+            if (keyCode == GLFW.GLFW_KEY_ESCAPE || keyCode == GLFW.GLFW_KEY_ENTER || keyCode == GLFW.GLFW_KEY_KP_ENTER) {
                 searchFocused = false;
                 return true;
             }
@@ -541,7 +603,7 @@ public class ClickGuiScreen extends Screen {
     @Override
     public boolean charTyped(CharacterEvent event) {
         int codePoint = event.codepoint();
-        if (searchFocused && !Character.isISOControl(codePoint) && searchQuery.length() < 24) {
+        if (bindingModule == null && searchFocused && !Character.isISOControl(codePoint) && searchQuery.length() < 24) {
             searchQuery += Character.toString(codePoint);
             scroll = 0;
             targetScroll = 0;
