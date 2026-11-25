@@ -1,0 +1,13 @@
+{
+  "required": true,
+  "minVersion": "0.8.7",
+  "package": "com.m1cheatmine.mixin",
+  "compatibilityLevel": "JAVA_21",
+  "client": [
+    "BlockMixin",
+    "MouseMixin",
+    "CameraMixin",
+    "LevelRendererMixin"
+  ],
+  "injectors": { "defaultRequire": 1 }
+}
