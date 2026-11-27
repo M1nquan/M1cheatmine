@@ -29,14 +29,24 @@ public class AutoReconnectModule extends Module {
             return;
         }
 
-        if (mc.screen instanceof DisconnectedScreen && lastServer != null) {
+        if (mc.screen instanceof DisconnectedScreen && lastServer != null && lastServer.ip != null) {
             long now = System.currentTimeMillis();
             if (disconnectTime == -1) {
                 disconnectTime = now;
             } else if (now - disconnectTime >= (long) (delay.value * 1000L)) {
                 disconnectTime = -1;
-                ServerAddress address = ServerAddress.parseString(lastServer.ip);
-                ConnectScreen.startConnecting(new JoinMultiplayerScreen(new TitleScreen()), mc, address, lastServer, false, null);
+                try {
+                    ServerAddress address = ServerAddress.parseString(lastServer.ip);
+                    ConnectScreen.startConnecting(
+                        new JoinMultiplayerScreen(new TitleScreen()),
+                        mc,
+                        address,
+                        lastServer,
+                        false,
+                        null
+                    );
+                } catch (Throwable ignored) {
+                }
             }
         } else {
             disconnectTime = -1;

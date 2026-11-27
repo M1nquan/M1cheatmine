@@ -1,17 +1,22 @@
 package com.m1cheatmine.module.impl.combat;
 
-import com.m1cheatmine.module.*;
+import com.m1cheatmine.module.Category;
 import com.m1cheatmine.module.Module;
-import com.m1cheatmine.module.setting.*;
+import com.m1cheatmine.module.setting.BooleanSetting;
+import com.m1cheatmine.module.setting.NumberSetting;
 import net.minecraft.core.BlockPos;
 import net.minecraft.core.Direction;
 import net.minecraft.world.InteractionHand;
-import net.minecraft.world.entity.Entity;
 import net.minecraft.world.entity.player.Player;
+import net.minecraft.world.item.Item;
 import net.minecraft.world.item.Items;
 import net.minecraft.world.level.block.Blocks;
+import net.minecraft.world.level.block.RespawnAnchorBlock;
 import net.minecraft.world.phys.BlockHitResult;
 import net.minecraft.world.phys.Vec3;
+
+import java.lang.reflect.Field;
+import java.lang.reflect.Method;
 
 public class AnchorAuraModule extends Module {
     public final NumberSetting range = new NumberSetting("Range", 4.5, 2.0, 6.0, 0.1);
@@ -24,11 +29,16 @@ public class AnchorAuraModule extends Module {
 
     public AnchorAuraModule() {
         super("AnchorAura", Category.COMBAT, false);
-        addSetting(range); addSetting(targetRange); addSetting(delay);
-        addSetting(autoPlace); addSetting(autoCharge); addSetting(autoDetonate);
+        addSetting(range);
+        addSetting(targetRange);
+        addSetting(delay);
+        addSetting(autoPlace);
+        addSetting(autoCharge);
+        addSetting(autoDetonate);
     }
 
-    @Override public void onTick() {
+    @Override
+    public void onTick() {
         if (mc.player == null || mc.level == null || mc.gameMode == null) return;
         Player target = findTarget();
         if (target == null) return;
@@ -36,15 +46,20 @@ public class AnchorAuraModule extends Module {
         if (now - lastAction < delay.value) return;
 
         BlockPos anchorPos = null;
-        for (BlockPos p : BlockPos.betweenClosed(target.blockPosition().offset(-2,-1,-2), target.blockPosition().offset(2,1,2))) {
-            if (mc.level.getBlockState(p).is(Blocks.RESPAWN_ANCHOR)) { anchorPos = p.immutable(); break; }
+        for (BlockPos p : BlockPos.betweenClosed(target.blockPosition().offset(-2, -1, -2), target.blockPosition().offset(2, 1, 2))) {
+            if (mc.level.getBlockState(p).is(Blocks.RESPAWN_ANCHOR)) {
+                anchorPos = p.immutable();
+                break;
+            }
         }
 
         if (anchorPos != null && autoDetonate.value) {
-            BlockPos below = anchorPos.below();
-            if (mc.level.getBlockState(anchorPos).getValue(net.minecraft.world.level.block.RespawnAnchorBlock.CHARGE) > 0) {
-                mc.gameMode.useItemOn(mc.player, InteractionHand.MAIN_HAND,
-                    new BlockHitResult(Vec3.atCenterOf(anchorPos), Direction.UP, anchorPos, false));
+            if (mc.level.getBlockState(anchorPos).getValue(RespawnAnchorBlock.CHARGE) > 0) {
+                mc.gameMode.useItemOn(
+                    mc.player,
+                    InteractionHand.MAIN_HAND,
+                    new BlockHitResult(Vec3.atCenterOf(anchorPos), Direction.UP, anchorPos, false)
+                );
                 lastAction = now;
                 return;
             }
@@ -53,15 +68,18 @@ public class AnchorAuraModule extends Module {
         if (autoPlace.value) {
             int slot = findHotbar(Items.RESPAWN_ANCHOR);
             if (slot != -1) {
-                for (BlockPos p : BlockPos.betweenClosed(target.blockPosition().offset(-2,0,-2), target.blockPosition().offset(2,1,2))) {
+                for (BlockPos p : BlockPos.betweenClosed(target.blockPosition().offset(-2, 0, -2), target.blockPosition().offset(2, 1, 2))) {
                     if (!mc.level.getBlockState(p).isAir()) continue;
                     if (mc.level.getBlockState(p.below()).isAir()) continue;
-                    if (mc.player.distanceToSqr(p.getX(), p.getY(), p.getZ()) > range.value * range.value) continue;
-                    int old = mc.player.getInventory().getSelectedSlot();
-                    mc.player.getInventory().setSelectedSlot(slot);
-                    mc.gameMode.useItemOn(mc.player, InteractionHand.MAIN_HAND,
-                        new BlockHitResult(Vec3.atCenterOf(p), Direction.UP, p.below(), false));
-                    mc.player.getInventory().setSelectedSlot(old);
+                    if (mc.player.distanceToSqr(p.getX() + 0.5, p.getY() + 0.5, p.getZ() + 0.5) > range.value * range.value) continue;
+                    int old = getSelectedSlot();
+                    setSelectedSlot(slot);
+                    mc.gameMode.useItemOn(
+                        mc.player,
+                        InteractionHand.MAIN_HAND,
+                        new BlockHitResult(Vec3.atCenterOf(p), Direction.UP, p.below(), false)
+                    );
+                    setSelectedSlot(old);
                     lastAction = now;
                     return;
                 }
@@ -71,28 +89,68 @@ public class AnchorAuraModule extends Module {
         if (autoCharge.value && anchorPos != null) {
             int slot = findHotbar(Items.GLOWSTONE);
             if (slot != -1) {
-                int old = mc.player.getInventory().getSelectedSlot();
-                mc.player.getInventory().setSelectedSlot(slot);
-                mc.gameMode.useItemOn(mc.player, InteractionHand.MAIN_HAND,
-                    new BlockHitResult(Vec3.atCenterOf(anchorPos), Direction.UP, anchorPos, false));
-                mc.player.getInventory().setSelectedSlot(old);
+                int old = getSelectedSlot();
+                setSelectedSlot(slot);
+                mc.gameMode.useItemOn(
+                    mc.player,
+                    InteractionHand.MAIN_HAND,
+                    new BlockHitResult(Vec3.atCenterOf(anchorPos), Direction.UP, anchorPos, false)
+                );
+                setSelectedSlot(old);
                 lastAction = now;
             }
         }
     }
 
     private Player findTarget() {
-        Player b = null; double bd = targetRange.value;
+        Player b = null;
+        double bd = targetRange.value;
         for (Player p : mc.level.players()) {
             if (p == mc.player || !p.isAlive()) continue;
             double d = mc.player.distanceTo(p);
-            if (d < bd) { bd = d; b = p; }
+            if (d < bd) {
+                bd = d;
+                b = p;
+            }
         }
         return b;
     }
 
-    private int findHotbar(net.minecraft.world.item.Item item) {
-        for (int i = 0; i < 9; i++) if (mc.player.getInventory().getItem(i).is(item)) return i;
+    private int findHotbar(Item item) {
+        for (int i = 0; i < 9; i++) {
+            if (mc.player.getInventory().getItem(i).is(item)) return i;
+        }
         return -1;
+    }
+
+    private int getSelectedSlot() {
+        Object inv = mc.player.getInventory();
+        try {
+            Method m = inv.getClass().getMethod("getSelectedSlot");
+            return (int) m.invoke(inv);
+        } catch (Throwable ignored) {
+        }
+        try {
+            Field f = inv.getClass().getField("selected");
+            return f.getInt(inv);
+        } catch (Throwable ignored) {
+        }
+        return 0;
+    }
+
+    private void setSelectedSlot(int slot) {
+        if (slot < 0 || slot > 8) return;
+        Object inv = mc.player.getInventory();
+        try {
+            Method m = inv.getClass().getMethod("setSelectedSlot", int.class);
+            m.invoke(inv, slot);
+            return;
+        } catch (Throwable ignored) {
+        }
+        try {
+            Field f = inv.getClass().getField("selected");
+            f.setInt(inv, slot);
+        } catch (Throwable ignored) {
+        }
     }
 }

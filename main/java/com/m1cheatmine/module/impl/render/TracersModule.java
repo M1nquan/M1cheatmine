@@ -9,12 +9,16 @@ import com.mojang.blaze3d.vertex.VertexConsumer;
 import net.minecraft.client.Camera;
 import net.minecraft.client.DeltaTracker;
 import net.minecraft.client.renderer.MultiBufferSource;
-import net.minecraft.client.renderer.RenderType;
+import net.minecraft.client.renderer.rendertype.RenderType;
 import net.minecraft.util.Mth;
 import net.minecraft.world.entity.player.Player;
 import net.minecraft.world.phys.Vec3;
 import org.joml.Matrix4f;
 import org.joml.Vector3f;
+
+import java.lang.reflect.Field;
+import java.lang.reflect.Method;
+import java.lang.reflect.Modifier;
 
 public class TracersModule extends Module {
     public final NumberSetting range = new NumberSetting("Range", 128.0, 16.0, 256.0, 8.0);
@@ -29,13 +33,14 @@ public class TracersModule extends Module {
     public void onRenderWorld(PoseStack ps, Camera camera, DeltaTracker deltaTracker) {
         if (!enabled || mc.level == null || mc.player == null) return;
 
-        Vec3 cam = camera.getPosition();
-        Vector3f look = camera.getLookVector();
+        Vec3 cam = resolveCameraPos(camera);
+        Vector3f look = resolveCameraLook(camera);
         Vec3 start = cam.add(look.x * 0.2, look.y * 0.2, look.z * 0.2);
         float pt = deltaTracker != null ? deltaTracker.getGameTimeDeltaPartialTick(true) : 1.0f;
 
+        RenderType lineType = resolveLineRenderType();
         MultiBufferSource.BufferSource bufferSource = mc.renderBuffers().bufferSource();
-        VertexConsumer vc = bufferSource.getBuffer(RenderType.lines());
+        VertexConsumer vc = bufferSource.getBuffer(lineType);
 
         ps.pushPose();
         ps.translate(-cam.x, -cam.y, -cam.z);
@@ -68,6 +73,54 @@ public class TracersModule extends Module {
         }
 
         ps.popPose();
-        bufferSource.endBatch(RenderType.lines());
+        bufferSource.endBatch(lineType);
+    }
+
+    private static RenderType resolveLineRenderType() {
+        String[] candidates = {"lines", "debugLineStrip", "debugLines"};
+        for (String name : candidates) {
+            try {
+                Method m = RenderType.class.getMethod(name);
+                if (Modifier.isStatic(m.getModifiers()) && RenderType.class.isAssignableFrom(m.getReturnType())) {
+                    Object val = m.invoke(null);
+                    if (val instanceof RenderType rt) return rt;
+                }
+            } catch (Throwable ignored) {
+            }
+        }
+        for (Field f : RenderType.class.getFields()) {
+            if (Modifier.isStatic(f.getModifiers()) && RenderType.class.isAssignableFrom(f.getType())) {
+                try {
+                    Object val = f.get(null);
+                    if (val instanceof RenderType rt) return rt;
+                } catch (Throwable ignored) {
+                }
+            }
+        }
+        throw new IllegalStateException("Cannot resolve line RenderType");
+    }
+
+    private static Vec3 resolveCameraPos(Camera camera) {
+        try {
+            return (Vec3) camera.getClass().getMethod("position").invoke(camera);
+        } catch (Throwable ignored) {
+        }
+        try {
+            return (Vec3) camera.getClass().getMethod("getPosition").invoke(camera);
+        } catch (Throwable ignored) {
+        }
+        return Vec3.ZERO;
+    }
+
+    private static Vector3f resolveCameraLook(Camera camera) {
+        try {
+            return (Vector3f) camera.getClass().getMethod("lookVector").invoke(camera);
+        } catch (Throwable ignored) {
+        }
+        try {
+            return (Vector3f) camera.getClass().getMethod("getLookVector").invoke(camera);
+        } catch (Throwable ignored) {
+        }
+        return new Vector3f(0f, 0f, 1f);
     }
 }

@@ -5,9 +5,15 @@
   "compatibilityLevel": "JAVA_21",
   "client": [
     "BlockMixin",
+    "VisGraphMixin",
+    "BlockStateBaseMixin",
     "MouseMixin",
     "CameraMixin",
-    "LevelRendererMixin"
+    "LevelRendererMixin",
+    "EntityMixin",
+    "ClientPacketListenerMixin"
   ],
-  "injectors": { "defaultRequire": 1 }
+  "injectors": {
+    "defaultRequire": 0
+  }
 }

@@ -17,25 +17,30 @@ import org.spongepowered.asm.mixin.injection.callback.CallbackInfo;
 
 @Mixin(LevelRenderer.class)
 public class LevelRendererMixin {
-    @Inject(method = "renderLevel", at = @At("RETURN"))
+
+    @Inject(method = "renderLevel", at = @At("RETURN"), require = 0)
     private void onRenderLevel(GraphicsResourceAllocator resourceAllocator, DeltaTracker deltaTracker,
                                boolean renderBlockOutline, Camera camera, Matrix4f frustumMatrix,
                                Matrix4f projectionMatrix, Matrix4f cullingProjectionMatrix,
                                GpuBufferSlice fogBuffer, Vector4f fogColor, boolean shouldRenderSky,
                                CallbackInfo ci) {
-        PoseStack ps = new PoseStack();
-        ps.mulPose(frustumMatrix);
+        if (camera == null || frustumMatrix == null) return;
+        try {
+            PoseStack ps = new PoseStack();
+            ps.mulPose(frustumMatrix);
 
-        EspModule esp = ModuleManager.getModule(EspModule.class);
-        if (esp != null && esp.enabled) esp.onRenderWorld(ps, camera, deltaTracker);
+            EspModule esp = ModuleManager.getModule(EspModule.class);
+            if (esp != null && esp.enabled) esp.onRenderWorld(ps, camera, deltaTracker);
 
-        TracersModule tr = ModuleManager.getModule(TracersModule.class);
-        if (tr != null && tr.enabled) tr.onRenderWorld(ps, camera, deltaTracker);
+            TracersModule tr = ModuleManager.getModule(TracersModule.class);
+            if (tr != null && tr.enabled) tr.onRenderWorld(ps, camera, deltaTracker);
 
-        HoleEspModule hole = ModuleManager.getModule(HoleEspModule.class);
-        if (hole != null && hole.enabled) hole.onRenderWorld(ps, camera);
+            HoleEspModule hole = ModuleManager.getModule(HoleEspModule.class);
+            if (hole != null && hole.enabled) hole.onRenderWorld(ps, camera);
 
-        StorageEspModule storage = ModuleManager.getModule(StorageEspModule.class);
-        if (storage != null && storage.enabled) storage.onRenderWorld(ps, camera);
+            StorageEspModule storage = ModuleManager.getModule(StorageEspModule.class);
+            if (storage != null && storage.enabled) storage.onRenderWorld(ps, camera);
+        } catch (Throwable ignored) {
+        }
     }
 }

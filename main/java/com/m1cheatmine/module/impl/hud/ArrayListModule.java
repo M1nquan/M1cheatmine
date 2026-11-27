@@ -27,8 +27,8 @@ public class ArrayListModule extends HudModule {
         if (mc.font == null || mc.getWindow() == null) return;
 
         int sw = mc.getWindow().getGuiScaledWidth();
-        List<Module> active = ModuleManager.modules.stream()
-            .filter(m -> m.enabled && m.category != Category.HUD)
+        List<Module> candidates = ModuleManager.modules.stream()
+            .filter(m -> m.category != Category.HUD && (m.enabled || m.toggleAnim > 0.02f))
             .sorted(Comparator.comparingInt((Module m) -> mc.font.width(m.name)).reversed())
             .toList();
 
@@ -37,7 +37,7 @@ public class ArrayListModule extends HudModule {
         int gap = compact.value ? 1 : 2;
         int index = 0;
 
-        for (Module m : active) {
+        for (Module m : candidates) {
             m.toggleAnim = MathUtils.lerp(m.toggleAnim, m.enabled ? 1f : 0f, 0.25f);
             float anim = MathUtils.clamp(m.toggleAnim, 0f, 1f);
             if (anim <= 0.02f) continue;

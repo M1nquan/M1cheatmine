@@ -17,6 +17,9 @@ import net.minecraft.world.phys.AABB;
 import net.minecraft.world.phys.BlockHitResult;
 import net.minecraft.world.phys.Vec3;
 
+import java.lang.reflect.Field;
+import java.lang.reflect.Method;
+
 public class CrystalAuraModule extends Module {
     public final NumberSetting placeRange = new NumberSetting("Place Range", 4.5, 2.0, 6.0, 0.1);
     public final NumberSetting breakRange = new NumberSetting("Break Range", 4.5, 2.0, 6.0, 0.1);
@@ -62,15 +65,15 @@ public class CrystalAuraModule extends Module {
             if (pos != null) {
                 int slot = findHotbar(Items.END_CRYSTAL);
                 if (slot != -1) {
-                    int old = mc.player.getInventory().getSelectedSlot();
-                    mc.player.getInventory().setSelectedSlot(slot);
+                    int old = getSelectedSlot();
+                    setSelectedSlot(slot);
                     mc.gameMode.useItemOn(
                         mc.player,
                         InteractionHand.MAIN_HAND,
                         new BlockHitResult(Vec3.atCenterOf(pos), Direction.UP, pos, false)
                     );
                     if (swing.value) mc.player.swing(InteractionHand.MAIN_HAND);
-                    mc.player.getInventory().setSelectedSlot(old);
+                    setSelectedSlot(old);
                     lp = now;
                 }
             }
@@ -131,5 +134,36 @@ public class CrystalAuraModule extends Module {
             if (mc.player.getInventory().getItem(i).is(item)) return i;
         }
         return -1;
+    }
+
+    private int getSelectedSlot() {
+        Object inv = mc.player.getInventory();
+        try {
+            Method m = inv.getClass().getMethod("getSelectedSlot");
+            return (int) m.invoke(inv);
+        } catch (Throwable ignored) {
+        }
+        try {
+            Field f = inv.getClass().getField("selected");
+            return f.getInt(inv);
+        } catch (Throwable ignored) {
+        }
+        return 0;
+    }
+
+    private void setSelectedSlot(int slot) {
+        if (slot < 0 || slot > 8) return;
+        Object inv = mc.player.getInventory();
+        try {
+            Method m = inv.getClass().getMethod("setSelectedSlot", int.class);
+            m.invoke(inv, slot);
+            return;
+        } catch (Throwable ignored) {
+        }
+        try {
+            Field f = inv.getClass().getField("selected");
+            f.setInt(inv, slot);
+        } catch (Throwable ignored) {
+        }
     }
 }

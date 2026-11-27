@@ -1,6 +1,6 @@
 package com.m1cheatmine.module.impl.movement;
 
-import com.m1cheatmine.module.*;
+import com.m1cheatmine.module.Category;
 import com.m1cheatmine.module.Module;
 import com.m1cheatmine.module.setting.BooleanSetting;
 import com.m1cheatmine.module.setting.NumberSetting;
@@ -44,6 +44,7 @@ public class PhaseModule extends Module {
         if (mc.player != null) {
             mc.player.noPhysics = false;
             mc.player.setNoGravity(false);
+            mc.player.setDeltaMovement(Vec3.ZERO);
         }
     }
 }

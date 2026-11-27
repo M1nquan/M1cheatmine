@@ -9,7 +9,7 @@ import com.mojang.blaze3d.vertex.VertexConsumer;
 import net.minecraft.client.Camera;
 import net.minecraft.client.DeltaTracker;
 import net.minecraft.client.renderer.MultiBufferSource;
-import net.minecraft.client.renderer.RenderType;
+import net.minecraft.client.renderer.rendertype.RenderType;
 import net.minecraft.core.BlockPos;
 import net.minecraft.util.Mth;
 import net.minecraft.world.level.block.*;
@@ -17,6 +17,10 @@ import net.minecraft.world.level.block.entity.BlockEntity;
 import net.minecraft.world.level.chunk.LevelChunk;
 import net.minecraft.world.phys.Vec3;
 import org.joml.Matrix4f;
+
+import java.lang.reflect.Field;
+import java.lang.reflect.Method;
+import java.lang.reflect.Modifier;
 import java.util.ArrayList;
 import java.util.List;
 
@@ -63,23 +67,63 @@ public class StorageEspModule extends Module {
     public void onRenderWorld(PoseStack ps, Camera camera, DeltaTracker deltaTracker) {
         if (!enabled || mc.player == null || mc.level == null || entries.isEmpty()) return;
 
-        Vec3 cam = camera.getPosition();
-        MultiBufferSource.BufferSource bufferSource = mc.renderBuffers().bufferSource();
-        VertexConsumer vc = bufferSource.getBuffer(RenderType.lines());
+        try {
+            Vec3 cam = resolveCameraPos(camera);
+            RenderType lineType = resolveLineRenderType();
+            MultiBufferSource.BufferSource bufferSource = mc.renderBuffers().bufferSource();
+            VertexConsumer vc = bufferSource.getBuffer(lineType);
 
-        ps.pushPose();
-        ps.translate(-cam.x, -cam.y, -cam.z);
-        Matrix4f m = ps.last().pose();
+            ps.pushPose();
+            ps.translate(-cam.x, -cam.y, -cam.z);
+            Matrix4f m = ps.last().pose();
 
-        for (StorageEntry entry : entries) {
-            BlockPos p = entry.pos;
-            drawBox(vc, m, p.getX() + 0.0625f, p.getY(), p.getZ() + 0.0625f,
-                    p.getX() + 0.9375f, p.getY() + 0.875f, p.getZ() + 0.9375f,
-                    entry.r, entry.g, entry.bl, 1.0f);
+            for (StorageEntry entry : entries) {
+                BlockPos p = entry.pos;
+                drawBox(vc, m, p.getX() + 0.0625f, p.getY(), p.getZ() + 0.0625f,
+                        p.getX() + 0.9375f, p.getY() + 0.875f, p.getZ() + 0.9375f,
+                        entry.r, entry.g, entry.bl, 1.0f);
+            }
+
+            ps.popPose();
+            bufferSource.endBatch(lineType);
+        } catch (Throwable ignored) {
         }
+    }
 
-        ps.popPose();
-        bufferSource.endBatch(RenderType.lines());
+    private static RenderType resolveLineRenderType() {
+        String[] candidates = {"lines", "debugLineStrip", "debugLines"};
+        for (String name : candidates) {
+            try {
+                Method m = RenderType.class.getMethod(name);
+                if (Modifier.isStatic(m.getModifiers()) && RenderType.class.isAssignableFrom(m.getReturnType())) {
+                    Object val = m.invoke(null);
+                    if (val instanceof RenderType rt) return rt;
+                }
+            } catch (Throwable ignored) {
+            }
+        }
+        for (Field f : RenderType.class.getFields()) {
+            if (Modifier.isStatic(f.getModifiers()) && RenderType.class.isAssignableFrom(f.getType())) {
+                try {
+                    Object val = f.get(null);
+                    if (val instanceof RenderType rt) return rt;
+                } catch (Throwable ignored) {
+                }
+            }
+        }
+        throw new IllegalStateException("Cannot resolve line RenderType");
+    }
+
+    private static Vec3 resolveCameraPos(Camera camera) {
+        try {
+            return (Vec3) camera.getClass().getMethod("position").invoke(camera);
+        } catch (Throwable ignored) {
+        }
+        try {
+            return (Vec3) camera.getClass().getMethod("getPosition").invoke(camera);
+        } catch (Throwable ignored) {
+        }
+        return Vec3.ZERO;
     }
 
     private void scanStorages() {
@@ -94,6 +138,7 @@ public class StorageEspModule extends Module {
                 LevelChunk chunk = mc.level.getChunkSource().getChunk(cx, cz, false);
                 if (chunk == null) continue;
                 for (BlockEntity be : chunk.getBlockEntities().values()) {
+                    if (be == null || be.isRemoved()) continue;
                     BlockPos pos = be.getBlockPos();
                     if (mc.player.distanceToSqr(pos.getX() + 0.5, pos.getY() + 0.5, pos.getZ() + 0.5) > maxDistSq) continue;
                     StorageEntry matched = classifyBlock(pos, be.getBlockState().getBlock());

@@ -17,7 +17,11 @@ public abstract class CameraMixin {
     @Shadow
     protected abstract void setRotation(float yaw, float pitch);
 
-    @Inject(method = "setup", at = @At("TAIL"))
+    @Inject(
+        method = "setup(Lnet/minecraft/world/level/BlockGetter;Lnet/minecraft/world/entity/Entity;ZZF)V",
+        at = @At("TAIL"),
+        require = 0
+    )
     private void onSetup(BlockGetter area, Entity focusedEntity, boolean thirdPerson,
                          boolean inverseView, float tickDelta, CallbackInfo ci) {
         FreelookModule fl = ModuleManager.getModule(FreelookModule.class);

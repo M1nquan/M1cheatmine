@@ -24,9 +24,23 @@ public abstract class Module {
         this.toggleAnim = d ? 1f : 0f;
     }
 
-    public void addSetting(NumberSetting s) { numberSettings.add(s); }
-    public void addSetting(BooleanSetting s) { booleanSettings.add(s); }
-    public void toggle() { enabled = !enabled; if (enabled) onEnable(); else onDisable(); }
+    public void addSetting(NumberSetting s) {
+        if (s != null) numberSettings.add(s);
+    }
+
+    public void addSetting(BooleanSetting s) {
+        if (s != null) booleanSettings.add(s);
+    }
+
+    public void toggle() {
+        enabled = !enabled;
+        try {
+            if (enabled) onEnable();
+            else onDisable();
+        } catch (Throwable ignored) {
+        }
+    }
+
     public void onEnable() {}
     public void onDisable() {}
     public void onTick() {}

@@ -20,6 +20,9 @@ import net.minecraftforge.fml.common.Mod;
 import net.minecraftforge.fml.javafmlmod.FMLJavaModLoadingContext;
 import org.lwjgl.glfw.GLFW;
 
+import java.lang.reflect.Field;
+import java.lang.reflect.Method;
+
 @Mod(M1CheatMine.MODID)
 public class M1CheatMine {
     public static final String MODID = "m1cheatmine";
@@ -28,29 +31,131 @@ public class M1CheatMine {
     public static KeyMapping openGuiKey;
     public static KeyMapping freelookKey;
 
+    public M1CheatMine() {
+        this(null);
+    }
+
     public M1CheatMine(FMLJavaModLoadingContext context) {
         INSTANCE = this;
-        ModuleManager.init();
+        try {
+            ModuleManager.init();
+        } catch (Throwable ignored) {
+        }
 
-        RegisterKeyMappingsEvent.BUS.addListener(this::registerKeys);
-        MinecraftForge.EVENT_BUS.register(this);
+        registerModBusListeners(context);
+
+        try {
+            MinecraftForge.EVENT_BUS.register(this);
+        } catch (Throwable ignored) {
+        }
+    }
+
+    private void registerModBusListeners(FMLJavaModLoadingContext context) {
+        try {
+            Field busField = RegisterKeyMappingsEvent.class.getField("BUS");
+            Object bus = busField.get(null);
+            Method addListener = bus.getClass().getMethod("addListener", java.util.function.Consumer.class);
+            addListener.invoke(bus, (java.util.function.Consumer<RegisterKeyMappingsEvent>) this::registerKeys);
+            return;
+        } catch (Throwable ignored) {
+        }
+
+        try {
+            Object modBus = null;
+            if (context != null) {
+                Method getModEventBus = context.getClass().getMethod("getModEventBus");
+                modBus = getModEventBus.invoke(context);
+            }
+            if (modBus == null) {
+                Method getCtx = FMLJavaModLoadingContext.class.getMethod("get");
+                Object ctx = getCtx.invoke(null);
+                Method getModEventBus = ctx.getClass().getMethod("getModEventBus");
+                modBus = getModEventBus.invoke(ctx);
+            }
+            if (modBus != null) {
+                Method addListener = modBus.getClass().getMethod("addListener", java.util.function.Consumer.class);
+                addListener.invoke(modBus, (java.util.function.Consumer<RegisterKeyMappingsEvent>) this::registerKeys);
+            }
+        } catch (Throwable ignored) {
+        }
+    }
+
+    private static void pushPose(GuiGraphics g) {
+        try {
+            Object pose = g.pose();
+            pose.getClass().getMethod("pushMatrix").invoke(pose);
+            return;
+        } catch (Throwable ignored) {
+        }
+        try {
+            Object pose = g.pose();
+            pose.getClass().getMethod("pushPose").invoke(pose);
+        } catch (Throwable ignored) {
+        }
+    }
+
+    private static void popPose(GuiGraphics g) {
+        try {
+            Object pose = g.pose();
+            pose.getClass().getMethod("popMatrix").invoke(pose);
+            return;
+        } catch (Throwable ignored) {
+        }
+        try {
+            Object pose = g.pose();
+            pose.getClass().getMethod("popPose").invoke(pose);
+        } catch (Throwable ignored) {
+        }
+    }
+
+    private static void translatePose(GuiGraphics g, float x, float y) {
+        try {
+            Object pose = g.pose();
+            pose.getClass().getMethod("translate", float.class, float.class).invoke(pose, x, y);
+            return;
+        } catch (Throwable ignored) {
+        }
+        try {
+            Object pose = g.pose();
+            pose.getClass().getMethod("translate", double.class, double.class, double.class).invoke(pose, (double) x, (double) y, 0.0);
+        } catch (Throwable ignored) {
+        }
+    }
+
+    private static void scalePose(GuiGraphics g, float sx, float sy) {
+        try {
+            Object pose = g.pose();
+            pose.getClass().getMethod("scale", float.class, float.class).invoke(pose, sx, sy);
+            return;
+        } catch (Throwable ignored) {
+        }
+        try {
+            Object pose = g.pose();
+            pose.getClass().getMethod("scale", float.class, float.class, float.class).invoke(pose, sx, sy, 1.0f);
+        } catch (Throwable ignored) {
+        }
     }
 
     public static void renderScaledHud(GuiGraphics g, HudModule h, int screenW, int screenH) {
+        if (g == null || h == null) return;
         float sw = Math.max(8f, h.width * HUD_SCALE);
         float sh = Math.max(8f, h.height * HUD_SCALE);
         h.x = Math.round(MathUtils.clamp(h.x, 2f, Math.max(2f, screenW - sw - 2f)));
         h.y = Math.round(MathUtils.clamp(h.y, 2f, Math.max(2f, screenH - sh - 2f)));
 
-        g.pose().pushMatrix();
-        g.pose().translate(h.x, h.y);
-        g.pose().scale(HUD_SCALE, HUD_SCALE);
-        g.pose().translate(-h.x, -h.y);
-        h.render(g);
-        g.pose().popMatrix();
+        pushPose(g);
+        translatePose(g, h.x, h.y);
+        scalePose(g, HUD_SCALE, HUD_SCALE);
+        translatePose(g, -h.x, -h.y);
+        try {
+            h.render(g);
+        } catch (Throwable ignored) {
+        }
+        popPose(g);
     }
 
     private void registerKeys(RegisterKeyMappingsEvent e) {
+        if (e == null) return;
         if (openGuiKey == null) {
             openGuiKey = new KeyMapping(
                 "key.m1cheatmine.open_gui",
@@ -68,17 +173,22 @@ public class M1CheatMine {
             );
         }
 
-        e.register(openGuiKey);
-        e.register(freelookKey);
+        try {
+            e.register(openGuiKey);
+            e.register(freelookKey);
+        } catch (Throwable ignored) {
+        }
     }
 
     @SubscribeEvent
     public void onKeyInput(InputEvent.Key e) {
-        if (e.getAction() != GLFW.GLFW_PRESS) return;
+        if (e == null || e.getAction() != GLFW.GLFW_PRESS) return;
         Minecraft mc = Minecraft.getInstance();
-        if (mc.player == null || mc.screen != null) return;
+        if (mc == null || mc.player == null || mc.screen != null) return;
 
         int key = e.getKey();
+        if (key <= 0) return;
+
         for (Module m : ModuleManager.modules) {
             if (m.keyCode > 0 && key == m.keyCode) {
                 m.toggle();
@@ -89,17 +199,23 @@ public class M1CheatMine {
     @SubscribeEvent
     public void onClientTick(TickEvent.ClientTickEvent.Post e) {
         Minecraft mc = Minecraft.getInstance();
-        if (mc.player == null || mc.level == null) return;
+        if (mc == null || mc.player == null || mc.level == null) return;
 
-        while (openGuiKey != null && openGuiKey.consumeClick()) {
-            if (mc.screen == null) {
-                mc.setScreen(new ClickGuiScreen());
+        try {
+            while (openGuiKey != null && openGuiKey.consumeClick()) {
+                if (mc.screen == null) {
+                    mc.setScreen(new ClickGuiScreen());
+                }
             }
+        } catch (Throwable ignored) {
         }
 
         for (Module m : ModuleManager.modules) {
             if (m.enabled) {
-                m.onTick();
+                try {
+                    m.onTick();
+                } catch (Throwable ignored) {
+                }
             }
         }
     }
@@ -107,8 +223,9 @@ public class M1CheatMine {
     @SubscribeEvent
     public void onRenderGui(CustomizeGuiOverlayEvent.Chat e) {
         Minecraft mc = Minecraft.getInstance();
-        if (mc.player == null || mc.options == null || mc.options.hideGui) return;
+        if (mc == null || mc.player == null || mc.options == null || mc.options.hideGui) return;
         if (mc.screen instanceof ClickGuiScreen) return;
+        if (mc.getWindow() == null) return;
 
         int sw = mc.getWindow().getGuiScaledWidth();
         int sh = mc.getWindow().getGuiScaledHeight();
@@ -125,7 +242,10 @@ public class M1CheatMine {
         for (Module m : ModuleManager.modules) {
             if (!(m instanceof HudModule) && m.enabled) {
                 m.enabled = false;
-                m.onDisable();
+                try {
+                    m.onDisable();
+                } catch (Throwable ignored) {
+                }
             }
         }
     }

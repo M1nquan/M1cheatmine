@@ -14,21 +14,48 @@ import net.minecraft.client.input.MouseButtonEvent;
 import net.minecraft.network.chat.Component;
 import org.lwjgl.glfw.GLFW;
 
+import java.awt.Color;
 import java.util.HashSet;
+import java.util.IdentityHashMap;
 import java.util.List;
 import java.util.Locale;
+import java.util.Map;
 import java.util.Set;
 import java.util.stream.Collectors;
 
 public class ClickGuiScreen extends Screen {
+    private enum ColorMode {
+        AERO_BLUE("Aero Blue", ColorUtils.AERO_ACCENT, ColorUtils.AERO_ACCENT2, ColorUtils.AERO_GLOW),
+        CYBER_CYAN("Cyan", 0xFF00E5FF, 0xFF70F3FF, 0x3800E5FF),
+        NEON_ROSE("Rose", 0xFFFF4D8D, 0xFFFF9EBB, 0x38FF4D8D),
+        EMERALD("Emerald", 0xFF10E89A, 0xFF72F7C6, 0x3810E89A),
+        SOLAR_GOLD("Gold", 0xFFFFB020, 0xFFFFD470, 0x38FFB020),
+        RAINBOW("Rainbow", 0xFF5FA8FF, 0xFFA8D0FF, 0x385FA8FF);
+
+        final String label;
+        final int primary;
+        final int secondary;
+        final int glow;
+
+        ColorMode(String label, int primary, int secondary, int glow) {
+            this.label = label;
+            this.primary = primary;
+            this.secondary = secondary;
+            this.glow = glow;
+        }
+    }
+
     private final Minecraft mc = Minecraft.getInstance();
     private static int winX = -1, winY = -1;
-    private static final int BASE_W = 350, BASE_H = 230;
+    private static final int BASE_W = 360, BASE_H = 236;
     private static int winW = BASE_W, winH = BASE_H;
-    private static final int SIDEBAR_W = 94;
+    private static final int SIDEBAR_W = 96;
     private static final float HUD_SCALE = M1CheatMine.HUD_SCALE;
+    private static final float UI_TEXT_SCALE = 0.92f;
     private static Category selected = Category.COMBAT;
+    private static ColorMode colorMode = ColorMode.AERO_BLUE;
     private static final Set<Module> collapsedModules = new HashSet<>();
+    private static final Map<Module, Integer> moduleKeys = new IdentityHashMap<>();
 
     private float openAnim = 0f, tabIndicatorY = 0f;
     private boolean draggingWin = false;
@@ -40,6 +67,8 @@ public class ClickGuiScreen extends Screen {
     private NumberSetting draggingSlider = null;
     private float sliderX, sliderW;
 
+    private Module bindingModule = null;
+
     private double scroll = 0, targetScroll = 0, maxScroll = 0;
     private String searchQuery = "";
     private boolean searchFocused = false;
@@ -49,17 +78,45 @@ public class ClickGuiScreen extends Screen {
         super(Component.literal("M1cheatmine"));
     }
 
+    private int activeAccent() {
+        if (colorMode == ColorMode.RAINBOW) {
+            float hue = ((System.nanoTime() / 1_000_000_000f) * 0.14f) % 1f;
+            return 0xFF000000 | (Color.HSBtoRGB(hue, 0.78f, 1.0f) & 0x00FFFFFF);
+        }
+        return colorMode.primary;
+    }
+
+    private int activeAccent2() {
+        if (colorMode == ColorMode.RAINBOW) {
+            float hue = (((System.nanoTime() / 1_000_000_000f) * 0.14f) + 0.12f) % 1f;
+            return 0xFF000000 | (Color.HSBtoRGB(hue, 0.55f, 1.0f) & 0x00FFFFFF);
+        }
+        return colorMode.secondary;
+    }
+
+    private int activeGlow() {
+        int rgb = activeAccent() & 0x00FFFFFF;
+        return 0x38000000 | rgb;
+    }
+
+    private void cycleColorMode(int step) {
+        ColorMode[] vals = ColorMode.values();
+        int idx = (colorMode.ordinal() + step) % vals.length;
+        if (idx < 0) idx += vals.length;
+        colorMode = vals[idx];
+    }
+
     @Override
     protected void init() {
-        winW = Math.min(BASE_W, Math.max(270, width - 16));
-        winH = Math.min(BASE_H, Math.max(180, height - 20));
+        winW = Math.min(BASE_W, Math.max(276, width - 16));
+        winH = Math.min(BASE_H, Math.max(184, height - 20));
         if (winX == -1 || winY == -1) {
             winX = (width - winW) / 2;
             winY = Math.max(4, (height - winH) / 2);
         }
         clampWindowPosition();
         clampAllHudPositions();
-        tabIndicatorY = winY + 42 + getVisibleCategoryIndex(selected) * 19;
+        tabIndicatorY = winY + 40 + getVisibleCategoryIndex(selected) * 18;
         lastFrameTime = System.nanoTime();
     }
 
@@ -115,22 +172,76 @@ public class ClickGuiScreen extends Screen {
         }
     }
 
-    private String fitText(String text, int maxWidth) {
-        if (maxWidth <= 0 || mc.font.width(text) <= maxWidth) return text;
+    private String formatKeyName(int keyCode) {
+        if (keyCode <= 0 || keyCode == GLFW.GLFW_KEY_UNKNOWN) return null;
+        String name = GLFW.glfwGetKeyName(keyCode, 0);
+        if (name != null && !name.isBlank()) {
+            return name.toUpperCase(Locale.ROOT);
+        }
+        return switch (keyCode) {
+            case GLFW.GLFW_KEY_SPACE -> "SPC";
+            case GLFW.GLFW_KEY_LEFT_SHIFT, GLFW.GLFW_KEY_RIGHT_SHIFT -> "SHF";
+            case GLFW.GLFW_KEY_LEFT_CONTROL, GLFW.GLFW_KEY_RIGHT_CONTROL -> "CTL";
+            case GLFW.GLFW_KEY_LEFT_ALT, GLFW.GLFW_KEY_RIGHT_ALT -> "ALT";
+            case GLFW.GLFW_KEY_TAB -> "TAB";
+            case GLFW.GLFW_KEY_ENTER, GLFW.GLFW_KEY_KP_ENTER -> "ENT";
+            default -> "K" + keyCode;
+        };
+    }
+
+    private int measureText(String text, boolean bold) {
+        if (mc.font == null || text == null || text.isEmpty()) return 0;
+        float spacing = bold ? 0.55f : 0.35f;
+        float raw = mc.font.width(text) + Math.max(0, text.length() - 1) * spacing;
+        return Math.round(raw * UI_TEXT_SCALE);
+    }
+
+    private void drawText(GuiGraphics g, String text, float x, float y, int color, boolean bold) {
+        if (mc.font == null || text == null || text.isEmpty()) return;
+        float spacing = bold ? 0.55f : 0.35f;
+        float cursorX = x;
+        int shadowColor = ColorUtils.withAlpha(0x050811, 130);
+
+        g.pose().pushMatrix();
+        g.pose().translate(cursorX, y);
+        g.pose().scale(UI_TEXT_SCALE, UI_TEXT_SCALE);
+
+        float localX = 0f;
+        for (int i = 0; i < text.length(); i++) {
+            String ch = String.valueOf(text.charAt(i));
+            int ix = Math.round(localX);
+            g.drawString(mc.font, ch, ix + 1, 1, shadowColor, false);
+            g.drawString(mc.font, ch, ix, 0, color, bold);
+            localX += mc.font.width(ch) + spacing;
+        }
+
+        g.pose().popMatrix();
+    }
+
+    private String fitText(String text, int maxWidth, boolean bold) {
+        if (maxWidth <= 0 || measureText(text, bold) <= maxWidth) return text;
         String dots = "..";
-        int avail = Math.max(0, maxWidth - mc.font.width(dots));
+        int avail = Math.max(0, maxWidth - measureText(dots, bold));
         StringBuilder sb = new StringBuilder();
         for (int i = 0; i < text.length(); i++) {
             char ch = text.charAt(i);
-            if (mc.font.width(sb.toString() + ch) > avail) break;
+            if (measureText(sb.toString() + ch, bold) > avail) break;
             sb.append(ch);
         }
         return sb + dots;
     }
 
+    private String fitText(String text, int maxWidth) {
+        return fitText(text, maxWidth, false);
+    }
+
     @Override
     public void render(GuiGraphics g, int mx, int my, float d) {
         if (mc.font == null) return;
+
+        int accent = activeAccent();
+        int accent2 = activeAccent2();
+        int glowCol = activeGlow();
 
         long now = System.nanoTime();
         float dt = MathUtils.clamp((now - lastFrameTime) / 1_000_000_000f, 0.001f, 0.1f);
@@ -149,12 +260,12 @@ public class ClickGuiScreen extends Screen {
                 float sh = scaledHudH(h);
                 boolean hovered = MathUtils.isHovered(mx, my, h.x - 1, h.y - 1, sw + 2, sh + 2) || draggingHud == h;
                 if (hovered) {
-                    RenderUtils.roundedOutline(g, h.x - 1f, h.y - 1f, sw + 2f, sh + 2f, 2.5f, 0.8f, ColorUtils.AERO_ACCENT);
+                    RenderUtils.roundedOutline(g, h.x - 1f, h.y - 1f, sw + 2f, sh + 2f, 2.5f, 0.8f, accent);
                     int closeX = Math.round(h.x + sw - 7f);
                     int closeY = Math.round(h.y - 8f);
                     if (closeY < 2) closeY = Math.round(h.y + sh + 1f);
                     RenderUtils.roundedRect(g, closeX, closeY, 8, 8, 2f, 0xE82A141C);
-                    g.drawString(mc.font, "x", closeX + 2, closeY, ColorUtils.DANGER, false);
+                    drawText(g, "x", closeX + 2.2f, closeY + 0.5f, ColorUtils.DANGER, true);
                 }
             }
         }
@@ -165,7 +276,7 @@ public class ClickGuiScreen extends Screen {
         g.pose().translate(cx * (1 - scale), cy * (1 - scale));
         g.pose().scale(scale, scale);
 
-        RenderUtils.glow(g, winX, winY, winW, winH, 8, ColorUtils.AERO_GLOW, 7);
+        RenderUtils.glow(g, winX, winY, winW, winH, 8, glowCol, 7);
         RenderUtils.shadow(g, winX, winY, winW, winH, 8, 5);
         RenderUtils.roundedGradientV(g, winX, winY, winW, winH, 8, 0xE61E2940, 0xE60F182A);
         RenderUtils.roundedOutline(g, winX, winY, winW, winH, 8, 1.1f, ColorUtils.AERO_BORDER_HI);
@@ -175,9 +286,9 @@ public class ClickGuiScreen extends Screen {
         g.fill(winX + SIDEBAR_W - 6, winY + 3, winX + SIDEBAR_W, winY + winH - 3, ColorUtils.AERO_BG_SIDE);
         RenderUtils.rect(g, winX + SIDEBAR_W, winY + 3, 1, winH - 6, 0x40A8C8E8);
 
-        g.drawString(mc.font, "M1CHEAT", winX + 9, winY + 9, ColorUtils.TEXT_BRIGHT, true);
-        g.drawString(mc.font, "AERO // v2.2", winX + 9, winY + 18, ColorUtils.TEXT_DIM, false);
-        RenderUtils.roundedRect(g, winX + 9, winY + 28, 20, 1.0f, 0.5f, ColorUtils.AERO_ACCENT);
+        drawText(g, "M1CHEAT", winX + 9, winY + 9, ColorUtils.TEXT_BRIGHT, true);
+        drawText(g, "AERO // v2.2", winX + 9, winY + 18, ColorUtils.TEXT_DIM, false);
+        RenderUtils.roundedRect(g, winX + 9, winY + 28, 22, 1.0f, 0.5f, accent);
 
         List<Category> categories = getVisibleCategories();
         int catStartY = winY + 40;
@@ -187,7 +298,7 @@ public class ClickGuiScreen extends Screen {
             tabIndicatorY = MathUtils.lerp(tabIndicatorY, targetY, animRate);
             RenderUtils.roundedGradientV(g, winX + 5, tabIndicatorY, SIDEBAR_W - 10, 15, 3f, 0xE62E3A56, 0xE6202C44);
             RenderUtils.roundedOutline(g, winX + 5, tabIndicatorY, SIDEBAR_W - 10, 15, 3f, 0.85f, ColorUtils.AERO_BORDER_HI);
-            RenderUtils.roundedRect(g, winX + 7, tabIndicatorY + 2f, 1.8f, 11, 0.9f, ColorUtils.AERO_ACCENT);
+            RenderUtils.roundedRect(g, winX + 7, tabIndicatorY + 2f, 1.8f, 11, 0.9f, accent);
         }
 
         int tY = catStartY;
@@ -200,46 +311,57 @@ public class ClickGuiScreen extends Screen {
             int badgeReserve = 0;
             if (enabledCount > 0) {
                 String badge = String.valueOf(enabledCount);
-                int bw = mc.font.width(badge) + 4;
+                int bw = measureText(badge, false) + 4;
                 int bx = winX + SIDEBAR_W - 8 - bw;
                 RenderUtils.roundedRect(g, bx, tY + 3, bw, 9, 2f, 0x505FA8FF);
-                g.drawString(mc.font, badge, bx + 2, tY + 4, ColorUtils.AERO_ACCENT2, false);
+                drawText(g, badge, bx + 2, tY + 4.2f, accent2, false);
                 badgeReserve = bw + 4;
             }
 
             int maxCatTextW = SIDEBAR_W - 18 - badgeReserve;
-            g.drawString(mc.font, fitText(c.name, maxCatTextW), winX + 12, tY + 4, col, sel);
+            drawText(g, fitText(c.name, maxCatTextW, sel), winX + 12, tY + 4.2f, col, sel);
             tY += catStepY;
         }
 
-        String playerName = fitText((mc.player != null) ? mc.player.getName().getString() : "Player", SIDEBAR_W - 22);
+        String playerName = fitText((mc.player != null) ? mc.player.getName().getString() : "Player", SIDEBAR_W - 22, true);
         RenderUtils.rect(g, winX + 7, winY + winH - 24, SIDEBAR_W - 14, 1, 0x40A8C8E8);
         RenderUtils.circle(g, winX + 11, winY + winH - 13, 2.2f, ColorUtils.SUCCESS);
-        g.drawString(mc.font, playerName, winX + 17, winY + winH - 16, ColorUtils.TEXT_BRIGHT, true);
-        g.drawString(mc.font, "online", winX + 17, winY + winH - 8, ColorUtils.SUCCESS, false);
+        drawText(g, playerName, winX + 17, winY + winH - 16, ColorUtils.TEXT_BRIGHT, true);
+        drawText(g, "online", winX + 17, winY + winH - 8, ColorUtils.SUCCESS, false);
 
         int cX = winX + SIDEBAR_W + 8;
         int cW = winW - SIDEBAR_W - 16;
         List<Module> mods = getDisplayedModules();
 
-        int sbW = Math.min(82, Math.max(56, cW / 3)), sbH = 14;
+        int sbW = Math.min(72, Math.max(50, cW / 4)), sbH = 14;
         int sbX = cX + cW - sbW, sbY = winY + 9;
 
+        int cbW = 14, cbH = 14;
+        int cbX = sbX - cbW - 4, cbY = winY + 9;
+
         String headerTitle = searchQuery.isBlank() ? selected.name.toUpperCase() : "SEARCH";
-        int headerMaxW = Math.max(24, sbX - cX - 6);
-        g.drawString(mc.font, fitText(headerTitle, headerMaxW), cX, winY + 9, ColorUtils.TEXT_BRIGHT, true);
-        g.drawString(mc.font, fitText(mods.size() + " mods", headerMaxW), cX, winY + 18, ColorUtils.TEXT_MUTED, false);
+        String subInfo = bindingModule != null
+                ? "Press key for " + bindingModule.name + " (Del to clear)"
+                : mods.size() + " mods // " + colorMode.label;
+        int headerMaxW = Math.max(24, cbX - cX - 6);
+        drawText(g, fitText(headerTitle, headerMaxW, true), cX, winY + 9, ColorUtils.TEXT_BRIGHT, true);
+        drawText(g, fitText(subInfo, headerMaxW, false), cX, winY + 18, bindingModule != null ? accent2 : ColorUtils.TEXT_MUTED, false);
+
+        boolean colorHover = MathUtils.isHovered(mx, my, cbX, cbY, cbW, cbH);
+        RenderUtils.roundedGradientV(g, cbX, cbY, cbW, cbH, 3.5f, 0xD8121C30, 0xD80B1220);
+        RenderUtils.roundedOutline(g, cbX, cbY, cbW, cbH, 3.5f, 0.9f, colorHover ? accent : ColorUtils.AERO_BORDER);
+        RenderUtils.circle(g, cbX + cbW / 2f, cbY + cbH / 2f, 3.6f, accent);
 
         RenderUtils.roundedGradientV(g, sbX, sbY, sbW, sbH, 3.5f, 0xD8121C30, 0xD80B1220);
-        RenderUtils.roundedOutline(g, sbX, sbY, sbW, sbH, 3.5f, 0.9f, searchFocused ? ColorUtils.AERO_ACCENT : ColorUtils.AERO_BORDER);
+        RenderUtils.roundedOutline(g, sbX, sbY, sbW, sbH, 3.5f, 0.9f, searchFocused ? accent : ColorUtils.AERO_BORDER);
         String rawSearch = searchQuery.isEmpty() ? (searchFocused ? "|" : "Search...") : searchQuery + (searchFocused ? "|" : "");
         int clearPad = searchQuery.isEmpty() ? 6 : 12;
-        String displaySearch = fitText(rawSearch, Math.max(8, sbW - clearPad));
+        String displaySearch = fitText(rawSearch, Math.max(8, sbW - clearPad), false);
         int searchCol = searchQuery.isEmpty() && !searchFocused ? ColorUtils.TEXT_MUTED : ColorUtils.TEXT_BRIGHT;
-        g.drawString(mc.font, displaySearch, sbX + 4, sbY + 3, searchCol, false);
+        drawText(g, displaySearch, sbX + 4, sbY + 3.5f, searchCol, false);
 
         if (!searchQuery.isEmpty()) {
-            g.drawString(mc.font, "x", sbX + sbW - 8, sbY + 3, ColorUtils.TEXT_DIM, false);
+            drawText(g, "x", sbX + sbW - 8, sbY + 3.5f, ColorUtils.TEXT_DIM, true);
         }
 
         RenderUtils.rect(g, cX, winY + 28, cW, 1, 0x40A8C8E8);
@@ -273,22 +395,35 @@ public class ClickGuiScreen extends Screen {
             int cardBot = ColorUtils.interpolate(ColorUtils.AERO_CARD_LO, ColorUtils.AERO_CARD_HI, Math.max(mod.hoverAnim * 0.5f, mod.toggleAnim * 0.25f));
 
             RenderUtils.roundedGradientV(g, cardX, cardY, colW, cardH, 5, cardTop, cardBot);
-            int border = ColorUtils.interpolate(ColorUtils.AERO_BORDER, ColorUtils.AERO_ACCENT, Math.max(mod.hoverAnim * 0.45f, mod.toggleAnim));
+            int border = (bindingModule == mod)
+                    ? accent2
+                    : ColorUtils.interpolate(ColorUtils.AERO_BORDER, accent, Math.max(mod.hoverAnim * 0.45f, mod.toggleAnim));
             RenderUtils.roundedOutline(g, cardX, cardY, colW, cardH, 5, 0.9f, border);
 
             int tx = cardX + colW - 21, ty = cardY + 6, tw = 15, th = 9;
-            int titleRightLimit = (settingsCount > 0) ? (cardX + colW - 31) : (tx - 4);
+            int boundKey = moduleKeys.getOrDefault(mod, GLFW.GLFW_KEY_UNKNOWN);
+            String keyLabel = (bindingModule == mod) ? "..." : formatKeyName(boundKey);
+            int keyBadgeW = 0;
+            if (keyLabel != null) {
+                keyBadgeW = measureText(keyLabel, false) + 4;
+                int kx = tx - keyBadgeW - (settingsCount > 0 ? 11 : 4);
+                RenderUtils.roundedRect(g, kx, cardY + 5, keyBadgeW, 10, 2f, 0x455FA8FF);
+                drawText(g, keyLabel, kx + 2, cardY + 6.3f, accent2, false);
+                keyBadgeW += 3;
+            }
+
+            int titleRightLimit = (settingsCount > 0) ? (cardX + colW - 31 - keyBadgeW) : (tx - 4 - keyBadgeW);
             int titleCol = ColorUtils.interpolate(ColorUtils.TEXT_SOFT, ColorUtils.TEXT_BRIGHT, mod.toggleAnim);
-            g.drawString(mc.font, fitText(mod.name, titleRightLimit - (cardX + 6)), cardX + 6, cardY + 6, titleCol, true);
+            drawText(g, fitText(mod.name, titleRightLimit - (cardX + 6), true), cardX + 6, cardY + 6.2f, titleCol, true);
 
             if (settingsCount > 0) {
                 String arrow = collapsed ? "+" : "-";
-                g.drawString(mc.font, arrow, cardX + colW - 28, cardY + 6, ColorUtils.TEXT_MUTED, false);
+                drawText(g, arrow, cardX + colW - 28, cardY + 6.2f, ColorUtils.TEXT_MUTED, true);
             }
 
-            int bg = ColorUtils.interpolate(0x90101A2E, ColorUtils.AERO_ACCENT, mod.toggleAnim);
+            int bg = ColorUtils.interpolate(0x90101A2E, accent, mod.toggleAnim);
             RenderUtils.roundedRect(g, tx, ty, tw, th, th / 2f, bg);
-            RenderUtils.roundedOutline(g, tx, ty, tw, th, th / 2f, 0.9f, ColorUtils.interpolate(ColorUtils.AERO_BORDER, ColorUtils.AERO_ACCENT, mod.toggleAnim));
+            RenderUtils.roundedOutline(g, tx, ty, tw, th, th / 2f, 0.9f, ColorUtils.interpolate(ColorUtils.AERO_BORDER, accent, mod.toggleAnim));
             float knobX = tx + 1.5f + (tw - th) * mod.toggleAnim;
             RenderUtils.circle(g, knobX + (th - 2) / 2f + 0.3f, ty + th / 2f, (th - 4) / 2f + 0.25f, 0xFFFFFFFF);
 
@@ -296,18 +431,18 @@ public class ClickGuiScreen extends Screen {
                 int sY = cardY + 22;
                 for (NumberSetting set : mod.numberSettings) {
                     String vs = formatNumber(set.value, set.increment);
-                    int vsW = mc.font.width(vs);
+                    int vsW = measureText(vs, true);
                     int setNameMaxW = Math.max(12, colW - 14 - vsW);
-                    g.drawString(mc.font, fitText(set.name, setNameMaxW), cardX + 6, sY, ColorUtils.TEXT_DIM, false);
-                    g.drawString(mc.font, vs, cardX + colW - vsW - 6, sY, ColorUtils.TEXT_BRIGHT, false);
+                    drawText(g, fitText(set.name, setNameMaxW, false), cardX + 6, sY + 0.3f, ColorUtils.TEXT_DIM, false);
+                    drawText(g, vs, cardX + colW - vsW - 6, sY + 0.3f, ColorUtils.TEXT_BRIGHT, true);
 
                     float bX = cardX + 6, bY = sY + 9, bW = colW - 12, bH = 2.6f;
                     RenderUtils.roundedRect(g, bX, bY, bW, bH, 1.3f, 0x90101A2E);
                     float fW = bW * set.ratio();
                     if (fW > 0) {
-                        RenderUtils.roundedGradientV(g, bX, bY, fW, bH, 1.3f, ColorUtils.AERO_ACCENT, ColorUtils.AERO_ACCENT2);
+                        RenderUtils.roundedGradientV(g, bX, bY, fW, bH, 1.3f, accent, accent2);
                     }
-                    RenderUtils.circle(g, bX + fW, bY + bH / 2f, 2.8f, ColorUtils.AERO_ACCENT);
+                    RenderUtils.circle(g, bX + fW, bY + bH / 2f, 2.8f, accent);
                     RenderUtils.circle(g, bX + fW, bY + bH / 2f, 1.3f, 0xFFFFFFFF);
                     sY += 20;
                 }
@@ -315,13 +450,13 @@ public class ClickGuiScreen extends Screen {
                 for (BooleanSetting bs : mod.booleanSettings) {
                     int bxx = cardX + colW - 15, bxy = sY, cs = 9;
                     int bsMaxW = Math.max(12, bxx - (cardX + 6) - 4);
-                    g.drawString(mc.font, fitText(bs.name, bsMaxW), cardX + 6, sY + 1, bs.value ? ColorUtils.TEXT_BRIGHT : ColorUtils.TEXT_DIM, bs.value);
+                    drawText(g, fitText(bs.name, bsMaxW, bs.value), cardX + 6, sY + 1.3f, bs.value ? ColorUtils.TEXT_BRIGHT : ColorUtils.TEXT_DIM, bs.value);
                     RenderUtils.roundedGradientV(g, bxx, bxy, cs, cs, 1.8f, 0xC8101A2E, 0xC80A1220);
-                    RenderUtils.roundedOutline(g, bxx, bxy, cs, cs, 1.8f, 0.9f, bs.value ? ColorUtils.AERO_ACCENT : ColorUtils.AERO_BORDER);
+                    RenderUtils.roundedOutline(g, bxx, bxy, cs, cs, 1.8f, 0.9f, bs.value ? accent : ColorUtils.AERO_BORDER);
                     if (bs.value) {
-                        RenderUtils.rect(g, bxx + 2f, bxy + 4f, 1.4f, 2.2f, ColorUtils.AERO_ACCENT);
-                        RenderUtils.rect(g, bxx + 3.4f, bxy + 5.4f, 1.4f, 1.4f, ColorUtils.AERO_ACCENT);
-                        RenderUtils.rect(g, bxx + 4.8f, bxy + 2f, 1.4f, 4.2f, ColorUtils.AERO_ACCENT);
+                        RenderUtils.rect(g, bxx + 2f, bxy + 4f, 1.4f, 2.2f, accent);
+                        RenderUtils.rect(g, bxx + 3.4f, bxy + 5.4f, 1.4f, 1.4f, accent);
+                        RenderUtils.rect(g, bxx + 4.8f, bxy + 2f, 1.4f, 4.2f, accent);
                     }
                     sY += 15;
                 }
@@ -341,7 +476,7 @@ public class ClickGuiScreen extends Screen {
             float thumbH = Math.max(16f, viewH * (viewH / (float) (viewH + maxScroll)));
             float thumbY = viewTop + (viewH - thumbH) * (float) (scroll / maxScroll);
             RenderUtils.roundedRect(g, barX, viewTop, 2f, viewH, 1, 0x30A8C8E8);
-            RenderUtils.roundedRect(g, barX, thumbY, 2f, thumbH, 1, ColorUtils.AERO_ACCENT);
+            RenderUtils.roundedRect(g, barX, thumbY, 2f, thumbH, 1, accent);
         }
 
         g.pose().popMatrix();
@@ -353,6 +488,11 @@ public class ClickGuiScreen extends Screen {
         double mx = event.x();
         double my = event.y();
         int btn = event.button();
+
+        if (bindingModule != null) {
+            bindingModule = null;
+            return true;
+        }
 
         if (btn == 0) {
             for (Module m : ModuleManager.modules) {
@@ -373,8 +513,21 @@ public class ClickGuiScreen extends Screen {
 
         int cX = winX + SIDEBAR_W + 8;
         int cW = winW - SIDEBAR_W - 16;
-        int sbW = Math.min(82, Math.max(56, cW / 3)), sbH = 14;
+        int sbW = Math.min(72, Math.max(50, cW / 4)), sbH = 14;
         int sbX = cX + cW - sbW, sbY = winY + 9;
+
+        int cbW = 14, cbH = 14;
+        int cbX = sbX - cbW - 4, cbY = winY + 9;
+
+        if (MathUtils.isHovered(mx, my, cbX, cbY, cbW, cbH)) {
+            if (btn == 0) {
+                cycleColorMode(1);
+                return true;
+            } else if (btn == 1) {
+                cycleColorMode(-1);
+                return true;
+            }
+        }
 
         if (btn == 0) {
             if (MathUtils.isHovered(mx, my, sbX, sbY, sbW, sbH)) {
@@ -422,6 +575,10 @@ public class ClickGuiScreen extends Screen {
                     } else if (btn == 1 && (!mod.numberSettings.isEmpty() || !mod.booleanSettings.isEmpty())) {
                         if (collapsed) collapsedModules.remove(mod);
                         else collapsedModules.add(mod);
+                        return true;
+                    } else if (btn == 2) {
+                        bindingModule = mod;
+                        searchFocused = false;
                         return true;
                     }
                 }
@@ -522,8 +679,23 @@ public class ClickGuiScreen extends Screen {
     @Override
     public boolean keyPressed(KeyEvent event) {
         int keyCode = event.key();
-        if (searchFocused) {
+
+        if (bindingModule != null) {
             if (keyCode == GLFW.GLFW_KEY_ESCAPE) {
+                bindingModule = null;
+                return true;
+            }
+            if (keyCode == GLFW.GLFW_KEY_DELETE || keyCode == GLFW.GLFW_KEY_BACKSPACE) {
+                moduleKeys.remove(bindingModule);
+            } else {
+                moduleKeys.put(bindingModule, keyCode);
+            }
+            bindingModule = null;
+            return true;
+        }
+
+        if (searchFocused) {
+            if (keyCode == GLFW.GLFW_KEY_ESCAPE || keyCode == GLFW.GLFW_KEY_ENTER || keyCode == GLFW.GLFW_KEY_KP_ENTER) {
                 searchFocused = false;
                 return true;
             }
@@ -541,7 +713,7 @@ public class ClickGuiScreen extends Screen {
     @Override
     public boolean charTyped(CharacterEvent event) {
         int codePoint = event.codepoint();
-        if (searchFocused && !Character.isISOControl(codePoint) && searchQuery.length() < 24) {
+        if (bindingModule == null && searchFocused && !Character.isISOControl(codePoint) && searchQuery.length() < 24) {
             searchQuery += Character.toString(codePoint);
             scroll = 0;
             targetScroll = 0;

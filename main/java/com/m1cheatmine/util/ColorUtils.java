@@ -13,6 +13,12 @@ public class ColorUtils {
     public static final int AERO_GLOW      = 0x5060A0FF;
     public static final int AERO_ACCENT    = 0xFF5FA8FF;
     public static final int AERO_ACCENT2   = 0xFF8AB4F8;
+    public static final int CYBER_ACCENT   = 0xFFFF4FD8;
+    public static final int CYBER_ACCENT2  = 0xFF38F8FF;
+    public static final int SUNSET_ACCENT  = 0xFFFF7A59;
+    public static final int SUNSET_ACCENT2 = 0xFFFFC857;
+    public static final int EMERALD_ACCENT = 0xFF10B981;
+    public static final int EMERALD_ACCENT2= 0xFF38BDF8;
     public static final int AERO_HIGHLIGHT = 0xFFFFFFFF;
     public static final int TEXT_BRIGHT    = 0xFFFFFFFF;
     public static final int TEXT_SOFT      = 0xFFD8E4F8;
@@ -44,9 +50,17 @@ public class ColorUtils {
         return (a << 24) | (r << 16) | (g << 8) | b;
     }
 
+    public static int cycleColor(float phase, float speedSec, int c1, int c2) {
+        long periodMs = Math.max(1L, (long) (speedSec * 1000f));
+        float progress = (float) ((phase + (System.currentTimeMillis() % periodMs) / (double) periodMs) % 1.0);
+        float wave = 0.5f - 0.5f * (float) Math.cos(progress * Math.PI * 2.0);
+        return interpolate(c1, c2, wave);
+    }
+
     public static int rainbow(float sec, float sat, float bri, long off) {
         long periodMs = Math.max(1L, (long) (sec * 1000f));
         float hue = ((System.currentTimeMillis() + off) % periodMs) / (float) periodMs;
-        return Color.HSBtoRGB(hue, MathUtils.clamp(sat, 0f, 1f), MathUtils.clamp(bri, 0f, 1f));
+        int rgb = Color.HSBtoRGB(hue, MathUtils.clamp(sat, 0f, 1f), MathUtils.clamp(bri, 0f, 1f));
+        return 0xFF000000 | (rgb & 0xFFFFFF);
     }
 }

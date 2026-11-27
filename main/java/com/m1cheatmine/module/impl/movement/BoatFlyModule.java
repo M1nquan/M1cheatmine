@@ -1,11 +1,13 @@
 package com.m1cheatmine.module.impl.movement;
 
-import com.m1cheatmine.module.*;
+import com.m1cheatmine.module.Category;
 import com.m1cheatmine.module.Module;
 import com.m1cheatmine.module.setting.BooleanSetting;
 import com.m1cheatmine.module.setting.NumberSetting;
-import net.minecraft.world.entity.vehicle.Boat;
+import net.minecraft.world.entity.Entity;
 import net.minecraft.world.phys.Vec3;
+
+import java.util.Locale;
 
 public class BoatFlyModule extends Module {
     public final NumberSetting speed = new NumberSetting("Speed", 1.5, 0.1, 5.0, 0.1);
@@ -19,9 +21,17 @@ public class BoatFlyModule extends Module {
         addSetting(antiGravity);
     }
 
+    private boolean isBoat(Entity entity) {
+        if (entity == null) return false;
+        String cls = entity.getClass().getSimpleName().toLowerCase(Locale.ROOT);
+        return cls.contains("boat") || cls.contains("raft");
+    }
+
     @Override
     public void onTick() {
-        if (mc.player == null || !(mc.player.getVehicle() instanceof Boat boat)) return;
+        if (mc.player == null) return;
+        Entity boat = mc.player.getVehicle();
+        if (!isBoat(boat)) return;
 
         boat.setYRot(mc.player.getYRot());
         double forward = mc.player.input.getMoveVector().y;

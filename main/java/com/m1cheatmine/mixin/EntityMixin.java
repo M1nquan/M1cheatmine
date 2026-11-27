@@ -14,11 +14,13 @@ import org.spongepowered.asm.mixin.injection.callback.CallbackInfoReturnable;
 @Mixin(Entity.class)
 public class EntityMixin {
 
-    @Inject(method = "getBoundingBox", at = @At("RETURN"), cancellable = true)
+    @Inject(method = "getBoundingBox", at = @At("RETURN"), cancellable = true, require = 0)
     private void onGetBoundingBox(CallbackInfoReturnable<AABB> cir) {
         Entity self = (Entity) (Object) this;
         if (!(self instanceof Player)) return;
-        if (self == Minecraft.getInstance().player) return;
+
+        Minecraft mc = Minecraft.getInstance();
+        if (mc.player == null || self == mc.player) return;
 
         HitboxesModule hb = ModuleManager.getModule(HitboxesModule.class);
         if (hb == null || !hb.enabled) return;
@@ -27,6 +29,8 @@ public class EntityMixin {
         if (scale <= 1.001) return;
 
         AABB original = cir.getReturnValue();
+        if (original == null) return;
+
         double expandX = (original.getXsize() * (scale - 1.0)) * 0.5;
         double expandZ = (original.getZsize() * (scale - 1.0)) * 0.5;
         cir.setReturnValue(original.inflate(expandX, 0.0, expandZ));

@@ -12,6 +12,9 @@ import net.minecraft.world.item.BlockItem;
 import net.minecraft.world.phys.BlockHitResult;
 import net.minecraft.world.phys.Vec3;
 
+import java.lang.reflect.Field;
+import java.lang.reflect.Method;
+
 public class ScaffoldModule extends Module {
     public final NumberSetting delay = new NumberSetting("Delay", 30, 0, 200, 10);
     public final BooleanSetting tower = new BooleanSetting("Tower", true);
@@ -49,9 +52,9 @@ public class ScaffoldModule extends Module {
 
         if (neighborPos == null || placeFace == null) return;
 
-        int oldSlot = mc.player.getInventory().getSelectedSlot();
+        int oldSlot = getSelectedSlot();
         if (oldSlot != slot) {
-            mc.player.getInventory().setSelectedSlot(slot);
+            setSelectedSlot(slot);
             mc.getConnection().send(new ServerboundSetCarriedItemPacket(slot));
         }
 
@@ -67,7 +70,7 @@ public class ScaffoldModule extends Module {
         }
 
         if (oldSlot != slot) {
-            mc.player.getInventory().setSelectedSlot(oldSlot);
+            setSelectedSlot(oldSlot);
             mc.getConnection().send(new ServerboundSetCarriedItemPacket(oldSlot));
         }
 
@@ -77,7 +80,7 @@ public class ScaffoldModule extends Module {
     private int findBlockSlot() {
         if (mc.player == null) return -1;
         if (mc.player.getMainHandItem().getItem() instanceof BlockItem) {
-            return mc.player.getInventory().getSelectedSlot();
+            return getSelectedSlot();
         }
         for (int i = 0; i < 9; i++) {
             if (mc.player.getInventory().getItem(i).getItem() instanceof BlockItem) {
@@ -85,5 +88,36 @@ public class ScaffoldModule extends Module {
             }
         }
         return -1;
+    }
+
+    private int getSelectedSlot() {
+        Object inv = mc.player.getInventory();
+        try {
+            Method m = inv.getClass().getMethod("getSelectedSlot");
+            return (int) m.invoke(inv);
+        } catch (Throwable ignored) {
+        }
+        try {
+            Field f = inv.getClass().getField("selected");
+            return f.getInt(inv);
+        } catch (Throwable ignored) {
+        }
+        return 0;
+    }
+
+    private void setSelectedSlot(int slot) {
+        if (slot < 0 || slot > 8) return;
+        Object inv = mc.player.getInventory();
+        try {
+            Method m = inv.getClass().getMethod("setSelectedSlot", int.class);
+            m.invoke(inv, slot);
+            return;
+        } catch (Throwable ignored) {
+        }
+        try {
+            Field f = inv.getClass().getField("selected");
+            f.setInt(inv, slot);
+        } catch (Throwable ignored) {
+        }
     }
 }

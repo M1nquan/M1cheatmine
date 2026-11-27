@@ -4,9 +4,9 @@ license="All Rights Reserved"
 
 [[mods]]
 modId="m1cheatmine"
-version="2.0.0"
+version="2.2.0"
 displayName="M1cheatmine"
-authors="M1nhquaanz?"
+authors="M1nhquaanz"
 description='''Aero Glass full client.'''
 
 [[dependencies.m1cheatmine]]

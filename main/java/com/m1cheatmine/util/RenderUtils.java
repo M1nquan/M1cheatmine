@@ -4,14 +4,30 @@ import net.minecraft.client.gui.GuiGraphics;
 
 public class RenderUtils {
 
+    private static void safeFill(GuiGraphics g, int x1, int y1, int x2, int y2, int color) {
+        if (g == null || x2 <= x1 || y2 <= y1) return;
+        try {
+            g.fill(x1, y1, x2, y2, color);
+        } catch (Throwable ignored) {
+        }
+    }
+
+    private static void safeGradient(GuiGraphics g, int x1, int y1, int x2, int y2, int top, int bottom) {
+        if (g == null || x2 <= x1 || y2 <= y1) return;
+        try {
+            g.fillGradient(x1, y1, x2, y2, top, bottom);
+        } catch (Throwable ignored) {
+        }
+    }
+
     public static void rect(GuiGraphics g, float x, float y, float w, float h, int c) {
         if (w <= 0 || h <= 0) return;
-        g.fill((int) x, (int) y, (int) (x + w), (int) (y + h), c);
+        safeFill(g, (int) x, (int) y, (int) (x + w), (int) (y + h), c);
     }
 
     public static void gradientV(GuiGraphics g, float x, float y, float w, float h, int t, int b) {
         if (w <= 0 || h <= 0) return;
-        g.fillGradient((int) x, (int) y, (int) (x + w), (int) (y + h), t, b);
+        safeGradient(g, (int) x, (int) y, (int) (x + w), (int) (y + h), t, b);
     }
 
     public static void roundedRect(GuiGraphics g, float x, float y, float w, float h, float r, int color) {
@@ -24,23 +40,21 @@ public class RenderUtils {
         int ir = Math.min((int) r, Math.min(iw, ih) / 2);
 
         if (ir <= 1) {
-            g.fillGradient(ix, iy, ix + iw, iy + ih, top, bottom);
+            safeGradient(g, ix, iy, ix + iw, iy + ih, top, bottom);
             return;
         }
 
-        // Pháº§n thÃ¢n chÃ­nh giá»¯a
-        g.fillGradient(ix, iy + ir, ix + iw, iy + ih - ir,
+        safeGradient(g, ix, iy + ir, ix + iw, iy + ih - ir,
                 ColorUtils.interpolate(top, bottom, (float) ir / ih),
                 ColorUtils.interpolate(top, bottom, (float) (ih - ir) / ih));
 
-        // Cáº¯t bo trÃ²n 2 Ä‘áº§u trÃªn vÃ  dÆ°á»›i
         for (int i = 0; i < ir; i++) {
             double dy = ir - i - 0.5;
             int inset = (int) Math.round(ir - Math.sqrt(Math.max(0, ir * ir - dy * dy)));
             int topCol = ColorUtils.interpolate(top, bottom, (float) i / ih);
             int botCol = ColorUtils.interpolate(top, bottom, (float) (ih - i - 1) / ih);
-            g.fill(ix + inset, iy + i, ix + iw - inset, iy + i + 1, topCol);
-            g.fill(ix + inset, iy + ih - i - 1, ix + iw - inset, iy + ih - i, botCol);
+            safeFill(g, ix + inset, iy + i, ix + iw - inset, iy + i + 1, topCol);
+            safeFill(g, ix + inset, iy + ih - i - 1, ix + iw - inset, iy + ih - i, botCol);
         }
     }
 
@@ -50,18 +64,18 @@ public class RenderUtils {
         int t = Math.max(1, (int) lw);
         int ir = Math.min((int) r, Math.min(iw, ih) / 2);
 
-        g.fill(ix + ir, iy, ix + iw - ir, iy + t, color);
-        g.fill(ix + ir, iy + ih - t, ix + iw - ir, iy + ih, color);
-        g.fill(ix, iy + ir, ix + t, iy + ih - ir, color);
-        g.fill(ix + iw - t, iy + ir, ix + iw, iy + ih - ir, color);
+        safeFill(g, ix + ir, iy, ix + iw - ir, iy + t, color);
+        safeFill(g, ix + ir, iy + ih - t, ix + iw - ir, iy + ih, color);
+        safeFill(g, ix, iy + ir, ix + t, iy + ih - ir, color);
+        safeFill(g, ix + iw - t, iy + ir, ix + iw, iy + ih - ir, color);
 
         for (int i = 0; i < ir; i++) {
             double dy = ir - i - 0.5;
             int inset = (int) Math.round(ir - Math.sqrt(Math.max(0, ir * ir - dy * dy)));
-            g.fill(ix + inset, iy + i, ix + inset + t, iy + i + 1, color);
-            g.fill(ix + iw - inset - t, iy + i, ix + iw - inset, iy + i + 1, color);
-            g.fill(ix + inset, iy + ih - i - 1, ix + inset + t, iy + ih - i, color);
-            g.fill(ix + iw - inset - t, iy + ih - i - 1, ix + iw - inset, iy + ih - i, color);
+            safeFill(g, ix + inset, iy + i, ix + inset + t, iy + i + 1, color);
+            safeFill(g, ix + iw - inset - t, iy + i, ix + iw - inset, iy + i + 1, color);
+            safeFill(g, ix + inset, iy + ih - i - 1, ix + inset + t, iy + ih - i, color);
+            safeFill(g, ix + iw - inset - t, iy + ih - i - 1, ix + iw - inset, iy + ih - i, color);
         }
     }
 
@@ -71,7 +85,7 @@ public class RenderUtils {
         int icx = Math.round(cx), icy = Math.round(cy);
         for (int dy = -ir; dy <= ir; dy++) {
             int dx = (int) Math.round(Math.sqrt(Math.max(0, r * r - dy * dy)));
-            g.fill(icx - dx, icy + dy, icx + dx + 1, icy + dy + 1, color);
+            safeFill(g, icx - dx, icy + dy, icx + dx + 1, icy + dy + 1, color);
         }
     }
 
@@ -107,6 +121,14 @@ public class RenderUtils {
         roundedGradientV(g, x, y, w, h * 0.35f, r, 0x26FFFFFF, 0x00FFFFFF);
         if (w > 12) {
             rect(g, x + 6, y + 1, w - 12, 1, 0x70FFFFFF);
+        }
+    }
+
+    public static void roundedProgressBar(GuiGraphics g, float x, float y, float w, float h, float r, float progress, int bgColor, int fillTop, int fillBot) {
+        roundedRect(g, x, y, w, h, r, bgColor);
+        float p = MathUtils.clamp(progress, 0f, 1f);
+        if (p > 0f) {
+            roundedGradientV(g, x, y, w * p, h, r, fillTop, fillBot);
         }
     }
 }
